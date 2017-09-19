@@ -109,7 +109,7 @@ public class Indexer
         {
             RecordAndCnt recordAndCnt = getRecord(reader);
             if (recordAndCnt == null) break;
-            logger.debug("record read : " + recordAndCnt.getRecord().getControlNumber());
+            //logger.debug("record read : " + recordAndCnt.getRecord().getControlNumber());
 
             RecordAndDoc recDoc = null;
             try {
