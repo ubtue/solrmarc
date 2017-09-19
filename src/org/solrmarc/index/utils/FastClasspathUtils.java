@@ -27,13 +27,13 @@ public class FastClasspathUtils
         extractors = new LinkedHashSet<>();
         mappers = new LinkedHashSet<>();
         mixins = new LinkedHashSet<>();
-        FastClasspathScanner scanner = new FastClasspathScanner("org")  
+        FastClasspathScanner scanner = new FastClasspathScanner()
             .matchSubclassesOf(AbstractValueExtractorFactory.class, new SubclassMatchProcessor<AbstractValueExtractorFactory>() 
             {
                 @Override
                 public void processMatch(Class<? extends AbstractValueExtractorFactory> matchingClass) 
                 {
-//                    logger.debug("Subclass of AbstractValueExtractorFactory: " + matchingClass);
+                    logger.debug("Subclass of AbstractValueExtractorFactory: " + matchingClass);
                     extractors.add(matchingClass);
                 }
             })
@@ -42,7 +42,7 @@ public class FastClasspathUtils
                 @Override
                 public void processMatch(Class<? extends AbstractValueMappingFactory> matchingClass) 
                 {
-//                    logger.debug("Subclass of AbstractValueMappingFactory: " + matchingClass);
+                    logger.debug("Subclass of AbstractValueMappingFactory: " + matchingClass);
                     mappers.add(matchingClass);
                 }
             })
@@ -51,7 +51,7 @@ public class FastClasspathUtils
                 @Override
                 public void processMatch(Class<? extends Mixin> matchingClass) 
                 {
-//                    logger.debug("Subclass of Mixin: " + matchingClass);
+                    logger.debug("Subclass of Mixin: " + matchingClass);
                     mixins.add(matchingClass);
                 }
             });
