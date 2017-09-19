@@ -1,13 +1,14 @@
 package org.solrmarc.mixin;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 
@@ -19,7 +20,7 @@ import org.solrmarc.tools.PropertyUtils;
 
 public class FileLookupMixin implements Mixin
 {
-    Map<String, Map<String, String>> textfileMaps = new LinkedHashMap<>();
+    static ConcurrentHashMap<String, Map<String, String>> textfileMaps = new ConcurrentHashMap<>();
 
     public String getFromFileBy001(Record record, String filename, String defaultValue)
     {
@@ -32,6 +33,15 @@ public class FileLookupMixin implements Mixin
 
         String id = record.getControlNumber();
         String result = lookupMap.containsKey(id) ? lookupMap.get(id) : defaultValue.length() > 0 ? defaultValue : null;
+        return (result);
+    }
+
+    public String getFromFileKeyExists(Record record, String filename, String exists, String notExists)
+    {
+        Map<String, String> lookupMap = getLookupMap(filename, "");
+
+        String id = record.getControlNumber();
+        String result = lookupMap.containsKey(id) ? exists.length() > 0 ? exists : null : notExists.length() > 0 ? notExists : null;
         return (result);
     }
 
@@ -50,6 +60,29 @@ public class FileLookupMixin implements Mixin
         if (result.isEmpty() && defaultValue.length() > 0)
         {
             result.add(defaultValue);
+        }
+        return (result);
+    }
+
+    public Collection<String> mapFromFileKeyExists(Collection<String> keys, String filename, String exists, String notExists)
+    {
+        Map<String, String> lookupMap = getLookupMap(filename, "");
+        Collection<String> result = new ArrayList<String>(keys.size());
+
+        for (String key : keys)
+        {
+            if (lookupMap.containsKey(key))
+            {
+                if (!exists.isEmpty())
+                {
+                    result.add(exists);
+                }
+                return (result);
+            }
+        }
+        if (result.isEmpty() && !notExists.isEmpty())
+        {
+            result.add(notExists);
         }
         return (result);
     }
@@ -108,6 +141,7 @@ public class FileLookupMixin implements Mixin
         return(lookupMap);
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, String> loadTextFileIntoMap(String filename, String sepPattern)
     {
         Map<String, String> resultMap;
@@ -119,24 +153,34 @@ public class FileLookupMixin implements Mixin
             String line;
             while ((line = reader.readLine()) != null)
             {
-                String parts[] = line.split(sepPattern, 2);
-                if (parts.length == 2)
+                if (sepPattern.isEmpty())
                 {
-                    resultMap.put(parts[0], parts[1]);
+                    if (!line.trim().isEmpty())
+                    {
+                        resultMap.put(line, "1");
+                    }
+                }
+                else 
+                {
+                    String parts[] = line.split(sepPattern, 2);
+                    if (parts.length == 2)
+                    {
+                        resultMap.put(parts[0], parts[1]);
+                    }
                 }
             }
-            textfileMaps.put(filename+sepPattern, resultMap);
+            textfileMaps.putIfAbsent(filename+sepPattern, Collections.unmodifiableMap(resultMap));
         }
         catch (FileNotFoundException e)
         {
-            textfileMaps.put(filename+sepPattern, null);
+            textfileMaps.putIfAbsent(filename+sepPattern, Collections.EMPTY_MAP);
             throw new IndexerSpecException("Unable to open lookup file " + filename);
         }
         catch (IOException e)
         {
-            textfileMaps.put(filename+sepPattern, null);
+            textfileMaps.putIfAbsent(filename+sepPattern, Collections.EMPTY_MAP);
             throw new IndexerSpecException("Unable to read lookup file " + filename);
         }
-        return(resultMap);
+        return(textfileMaps.get(filename+sepPattern));
     }
 }

@@ -92,31 +92,29 @@ public class Boot
         }
         catch (IllegalAccessException | IllegalArgumentException e)
         {
-            logger.fatal("ERROR: Unable to invoke main method in specified class: " + classname);
-            logger.fatal(e);
+            logger.fatal("ERROR: Unable to invoke main method in specified class: " + classname, e);
             System.exit(2);
         }
         catch (InvocationTargetException e)
         {
             Throwable t = e.getTargetException();
-            logger.fatal("ERROR: Error while invoking main method in specified class: " + classname);
-            logger.fatal(t);
+            logger.fatal("ERROR: Error while invoking main method in specified class: " + classname, t);
             System.exit(2);
         }
         catch (ClassNotFoundException e)
         {
-            logger.fatal("ERROR: Unable to find specified main class: " + classname);
+            logger.fatal("ERROR: Unable to find specified main class: " + classname, e);
             findExecutables();
             System.exit(3);
         }
         catch (NoSuchMethodException e)
         {
-            logger.fatal("ERROR: Unable to find main method in specified class: " + classname);
+            logger.fatal("ERROR: Unable to find main method in specified class: " + classname, e);
             System.exit(4);
         }
         catch (SecurityException e)
         {
-            logger.fatal("ERROR: Unable to access main method in specified class: " + classname);
+            logger.fatal("ERROR: Unable to access main method in specified class: " + classname, e);
             System.exit(5);
         }
     }
@@ -399,7 +397,6 @@ public class Boot
             File dirSolrJ = new File(homeDirStr, dir.getPath());
             if (dirSolrJ.exists())
             {
-//                logger.info("Using directory: "+ dirSolrJ.getAbsolutePath() + " as location of solrj jars");
                 return(dirSolrJ);
             }
         }
@@ -410,22 +407,28 @@ public class Boot
     {
         for (String libdirname : addnlLibDirStrs)
         {
-            boolean found = false;
             File libDir = new File(libdirname);
             if (!libDir.isAbsolute())
             {
-                for (String homeDir : homeDirStrs)
+                logger.debug("Number of homeDirStrs: " + homeDirStrs.length);
+                logger.debug("homeDirStrs[0]: " + homeDirStrs[0]);
+                logger.debug("homeDirStrs[1]: " + homeDirStrs[1]);
+                for (int i = homeDirStrs.length - 1; i >= 0; i--)
                 {
+                    String homeDir = homeDirStrs[i];
+                    logger.debug("Checking for jars files in directory: " + homeDir + "/" + libdirname);
                     libDir = new File(homeDir, libdirname);
                     if (libDir.exists() && libDir.isDirectory() && libDir.listFiles().length > 0)
                     {
-                        found = true;
-                        break;
+                        logger.debug("Adding jars files in directory: " + libDir.getAbsolutePath());
+                        extendClasspathWithLibJarDir(libDir, null);
+                        extendClasspathWithDirOfClasses(libDir);
                     }
                 }
             }
-            if (found)
+            else if (libDir.exists() && libDir.isDirectory() && libDir.listFiles().length > 0)
             {
+                logger.debug("Adding jars files in directory: " + libDir.getAbsolutePath());
                 extendClasspathWithLibJarDir(libDir, null);
                 extendClasspathWithDirOfClasses(libDir);
             }

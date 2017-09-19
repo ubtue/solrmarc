@@ -71,7 +71,6 @@ public class ValueIndexerFactory
         if (theFactory != null && Arrays.equals(homeDirStrs, theFactory.homeDirStrs))
             return(theFactory);
 
-        initLogging(homeDirStrs);
         theFactory = new ValueIndexerFactory(homeDirStrs);
         try
         {
@@ -121,21 +120,6 @@ public class ValueIndexerFactory
         compileTool = new JavaValueExtractorUtils(dirsJavaSource);
         compileTool.compileSources();
     }
-
-    private static void initLogging(String[] homeDirs)
-    {
-        for (String dir : homeDirs)
-        {
-            File log4jProps = new File(dir, "log4j.properties");
-            if (log4jProps.exists())
-            {
-                LogManager.resetConfiguration();
-                PropertyConfigurator.configure(log4jProps.getAbsolutePath());
-                return;
-            }
-        }
-    }
-
 
     public Class<?>[] getCompiledClasses()
     {
@@ -543,7 +527,7 @@ public class ValueIndexerFactory
             str.equals("cleanEach") || str.equals("cleanEnd") || str.equals("clean") || str.equals("stripAccent") ||
             str.equals("stripPunct") || str.equals("stripInd2") || str.equals("toUpper") || str.equals("toLower") ||
             str.equals("toUpper") || str.equals("toLower") || str.equals("titleSortUpper") || str.equals("titleSortLower") ||
-            str.equals("untrimmed")) return (true);
+            str.equals("untrimmed") || str.equals("toTitleCase")) return (true);
         return (false);
     }
 
@@ -638,13 +622,9 @@ public class ValueIndexerFactory
             {
                 multiValueExtractor.addCleanVal(eCleanVal.TO_LOWER);
             }
-            else if (mapParts[0].equals("toUpper"))
+            else if (mapParts[0].equals("toTitleCase"))
             {
-                multiValueExtractor.addCleanVal(eCleanVal.TO_UPPER);
-            }
-            else if (mapParts[0].equals("toLower"))
-            {
-                multiValueExtractor.addCleanVal(eCleanVal.TO_LOWER);
+                multiValueExtractor.addCleanVal(eCleanVal.TO_TITLECASE);
             }
             else if (mapParts[0].equals("titleSortUpper"))
             {
@@ -758,7 +738,8 @@ public class ValueIndexerFactory
     private boolean isACollectorConfiguration(String string)
     {
         if (string.equals("unique") || string.equals("first") || string.equals("sort") || string.equals("notunique") ||
-            string.equals("notfirst") || string.equals("all") || string.equals("DeleteRecordIfFieldEmpty"))
+            string.equals("notfirst") || string.equals("all") || string.equals("DeleteRecordIfFieldEmpty") ||
+            string.equals("normalize") || string.equals("unnormalize"))
             return (true);
         return (false);
     }
@@ -795,6 +776,14 @@ public class ValueIndexerFactory
                 else if (mapParts[0].equals("notfirst"))
                 {
                     collector.setFirst(mapParts[0]);
+                }
+                else if (mapParts[0].equals("normalize"))
+                {
+                    collector.setNormalize("C");
+                }
+                else if (mapParts[0].equals("unnormalize"))
+                {
+                    collector.setNormalize("D");
                 }
                 else if (mapParts[0].equals("all"))
                 {
