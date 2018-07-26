@@ -40,6 +40,7 @@ import org.solrmarc.index.indexer.IndexerSpecException;
 import org.solrmarc.index.indexer.ValueIndexerFactory;
 //import org.solrmarc.marc.MarcReaderFactory;
 import org.solrmarc.tools.PropertyUtils;
+import org.solrmarc.tools.SolrMarcIndexerException;
 
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
@@ -49,6 +50,7 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -111,6 +113,13 @@ public class SolrMarcDebug extends BootableMain
         super.processArgs(args, false);
         initialize();
     }
+
+    @Override
+    protected boolean needsSolrJ()
+    {
+        return false;
+    }
+
 
     /**
      * Initialize the contents of the frame.
@@ -497,6 +506,10 @@ public class SolrMarcDebug extends BootableMain
             }
             if (pointToFirst) marcIdentifier.setSelectedItem(firstId);
         }
+        catch (FileNotFoundException fnfe)
+        {
+            errorPane.setText("Error: Cannot find the specified file: "+ marcFile.getAbsolutePath());
+        }
         catch (IOException e1)
         {
             // TODO Auto-generated catch block
@@ -560,7 +573,7 @@ public class SolrMarcDebug extends BootableMain
         {
             try
             {
-                currentConfigText = currentConfigText.replaceAll(",[ \t]*\n[ \t]+", ",");
+                currentConfigText = currentConfigText.replaceAll(",[ \t]*(\r)?\n[ \t]+", ",");
                 indexers = indexerFactory.createValueIndexers(currentConfigText.split("\n"));
                 previousConfigText = currentConfigText;
             }
@@ -585,19 +598,37 @@ public class SolrMarcDebug extends BootableMain
         attributesErr.addAttribute(StyleConstants.CharacterConstants.Italic, Boolean.FALSE);
         attributesErr.addAttribute(StyleConstants.CharacterConstants.Foreground, Color.RED);
         Document doc = outputPane.getDocument();
-
+        Map<String, List<String>> hasValueForField = new LinkedHashMap<String, List<String>>();
         for (AbstractValueIndexer<?> indexer : indexers)
         {
             Collection<String> fieldNameList = indexer.getSolrFieldNames();
             Collection<String> results = null;
             try
             {
+                if (indexer.getOnlyIfEmpty())
+                {
+                    if (indexer.getSolrFieldNames().size() == 1 && hasValueForField.containsKey(indexer.getSolrFieldNames().iterator().next())) 
+                        continue;
+                }
                 results = indexer.getFieldData(rec);
                 for (String fieldName : fieldNameList)
                 {
                     for (String result : results)
                     {
                         String outLine = fieldName + " : " + result + "\n";
+                        if (indexer.getOnlyIfEmpty() && hasValueForField.containsKey(fieldName)) 
+                            continue;
+                        List<String> resultList; 
+                        if (hasValueForField.containsKey(fieldName)) 
+                            resultList = hasValueForField.get(fieldName);
+                        else
+                            resultList = new ArrayList<String>();
+                        if (indexer.getOnlyIfUnique())
+                        {
+                            if (resultList.contains(result)) continue;
+                        }
+                        resultList.add(result);
+                        hasValueForField.put(fieldName, resultList);
                         try
                         {
                             doc.insertString(doc.getLength(), outLine, null);
@@ -613,15 +644,23 @@ public class SolrMarcDebug extends BootableMain
             catch (InvocationTargetException ioe)
             {
                 Throwable wrapped = ioe.getTargetException();
-                String outLine = "marc_error : " + indexer.getSolrFieldNames().toString() + wrapped.getMessage() + "\n";
-                try
+                if (wrapped instanceof SolrMarcIndexerException)
                 {
-                    doc.insertString(doc.getLength(), outLine, attributesErr);
+                    SolrMarcIndexerException smie = (SolrMarcIndexerException)wrapped;
+                    handleSolrMarcIndexerException(indexer, doc, attributesErr, smie);
                 }
-                catch (BadLocationException e)
+                else
                 {
-                    // TODO Auto-generated catch block
-                    e.printStackTrace();
+                    String outLine = "marc_error : " + indexer.getSolrFieldNames().toString() + wrapped.getMessage() + "\n";
+                    try
+                    {
+                        doc.insertString(doc.getLength(), outLine, attributesErr);
+                    }
+                    catch (BadLocationException e)
+                    {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
                 }
             }
             catch (IllegalArgumentException e)
@@ -650,6 +689,10 @@ public class SolrMarcDebug extends BootableMain
                     e1.printStackTrace();
                 }
             }
+            catch (SolrMarcIndexerException smie)
+            {
+                handleSolrMarcIndexerException(indexer, doc, attributesErr, smie);
+            }
             catch (Exception e)
             {
                 String outLine = "marc_error : " + indexer.getSolrFieldNames().toString() + e.getMessage() + "\n";
@@ -677,6 +720,33 @@ public class SolrMarcDebug extends BootableMain
         outputPane.setCaretPosition(0);
     }
 
+    private void handleSolrMarcIndexerException(AbstractValueIndexer<?> indexer, Document doc, SimpleAttributeSet attributesErr, SolrMarcIndexerException smie)
+    {
+        String outLine = "";
+        if (smie.getLevel() == SolrMarcIndexerException.IGNORE)
+        {
+            outLine = indexer.getSolrFieldNames().toString() + "throws exception  Record would be Ignored \n";
+        }
+        else if (smie.getLevel() == SolrMarcIndexerException.DELETE)
+        {
+            outLine = indexer.getSolrFieldNames().toString() + "throws exception  Record would be Deleted \n";
+        }
+        else if (smie.getLevel() == SolrMarcIndexerException.EXIT)
+        {
+            outLine = indexer.getSolrFieldNames().toString() + "throws exception  Record would be Terminate Indexing \n";
+        }
+
+        try
+        {
+            doc.insertString(0, outLine, attributesErr);
+        }
+        catch (BadLocationException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+    }
+    
     private String getTextForMarcErrorsAndExceptions(Record rec, List<IndexerSpecException> exceptions)
     {
         StringBuilder text = new StringBuilder();
