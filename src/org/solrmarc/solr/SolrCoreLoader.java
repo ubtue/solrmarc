@@ -10,6 +10,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 
 import org.apache.log4j.Logger;
+import org.solrmarc.driver.Boot;
 
 public class SolrCoreLoader
 {
@@ -44,12 +45,25 @@ public class SolrCoreLoader
         {
             pingStream = new BufferedReader(new InputStreamReader(pingURL.openStream()));
             String line;
+            logger.debug("Pinging Solr at URL:  " +pingURL);
+            boolean dotsShown = false;
             while ((line = pingStream.readLine()) != null)
             {
                 if (line.matches(".*\"status\">OK<.*") || line.matches(".*\"status\":\"OK\".*"))
                 {
+                    logger.debug("    "+ line);
                     statusOK = true;
+                    dotsShown = false;
                     break;
+                }
+                else if (logger.isTraceEnabled())
+                {
+                    logger.trace("    "+ line);
+                }
+                else if (logger.isDebugEnabled() && !dotsShown)
+                {
+                    logger.debug("    ...");
+                    dotsShown = true;
                 }
             }
         }
@@ -70,7 +84,7 @@ public class SolrCoreLoader
             Class<?> httpsolrserverClass = null;
             if (fullClassName != null && fullClassName.length() > 0)
             {
-                httpsolrserverClass = Class.forName(fullClassName);
+                httpsolrserverClass = Boot.classForName(fullClassName);
             }
             else
             {
@@ -78,7 +92,7 @@ public class SolrCoreLoader
                 {
                     try
                     {
-                        httpsolrserverClass = Class.forName(classname);
+                        httpsolrserverClass = Boot.classForName(classname);
                         logger.debug("Found Solrj class " + classname);
                         break;
                     }

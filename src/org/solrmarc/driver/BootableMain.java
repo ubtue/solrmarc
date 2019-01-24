@@ -2,14 +2,10 @@ package org.solrmarc.driver;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import org.apache.log4j.LogManager;
-import org.apache.log4j.Logger;
-import org.apache.log4j.PropertyConfigurator;
 import org.solrmarc.index.indexer.IndexerSpecException;
 
 import joptsimple.OptionException;
@@ -134,23 +130,26 @@ public class BootableMain
         LoggerDelegator.reInit(this.homeDirStrs);
         if (needsSolrJ())
         {
-            File solrJPath = (options.has(this.solrjDir) ? (File) this.options.valueOf(this.solrjDir) : new File("lib-solrj"));
-            try
+            if (!hasSolrJ())
             {
-                if (solrJPath.isAbsolute())
+                File solrJPath = (options.has(this.solrjDir) ? (File) this.options.valueOf(this.solrjDir) : new File("lib-solrj"));
+                try
                 {
-                    Boot.extendClasspathWithSolJJarDir(null, solrJPath);
+                    if (solrJPath.isAbsolute())
+                    {
+                        Boot.extendClasspathWithSolJJarDir(null, solrJPath);
+                    }
+                    else
+                    {
+                        Boot.extendClasspathWithSolJJarDir(this.homeDirStrs, solrJPath);
+                    }
                 }
-                else
+                catch (IndexerSpecException ise)
                 {
-                    Boot.extendClasspathWithSolJJarDir(this.homeDirStrs, solrJPath);
+                    logger.fatal("Fatal error: Failure to load SolrJ", ise);
+                    logger.error("Exiting...");
+                    System.exit(10);
                 }
-            }
-            catch (IndexerSpecException ise)
-            {
-                logger.fatal("Fatal error: Failure to load SolrJ", ise);
-                logger.error("Exiting...");
-                System.exit(10);
             }
         }
         // Now add local lib directories
@@ -169,22 +168,20 @@ public class BootableMain
         }
     }
 
-    protected boolean needsSolrJ()
+    private boolean hasSolrJ()
     {
+        try {
+            Boot.classForName("org.apache.solr.common.SolrInputDocument");
+        }
+        catch (ClassNotFoundException e)
+        {
+            return false;
+        }
         return true;
     }
 
-    private static void reInitLogging(String[] homeDirs)
+    protected boolean needsSolrJ()
     {
-        for (String dir : homeDirs)
-        {
-            File log4jProps = new File(dir, "log4j.properties");
-            if (log4jProps.exists())
-            {
-                LogManager.resetConfiguration();
-                PropertyConfigurator.configure(log4jProps.getAbsolutePath());
-                return;
-            }
-        }
+        return true;
     }
 }
