@@ -6,6 +6,8 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -35,18 +37,19 @@ public class ThreadedIndexer extends Indexer
     MarcReaderThread readerThread = null;
     Thread thisThread = null;
     ExecutorService indexerExecutor;
-    ExecutorService solrExecutor;
+    ThreadPoolExecutor solrExecutor;
+
     IndexerWorker[] workers = null;
 
     boolean doneReading = false;
-    final int buffersize;
+    final int chunksize;
     final AtomicInteger cnts[];
 
-    public ThreadedIndexer(List<AbstractValueIndexer<?>> indexers, SolrProxy solrProxy, int buffersize)
+    public ThreadedIndexer(List<AbstractValueIndexer<?>> indexers, SolrProxy solrProxy, int buffersize, int chunkSize)
     {
         super(indexers, solrProxy);
         readQ = new ArrayBlockingQueue<RecordAndCnt>(buffersize);
-        docQ = new ArrayBlockingQueue<RecordAndDoc>(buffersize);
+        docQ = new ArrayBlockingQueue<RecordAndDoc>(buffersize * 3);
         cnts = new AtomicInteger[]{ new AtomicInteger(0), new AtomicInteger(0), new AtomicInteger(0)};
         int num = 1;
         try {
@@ -73,8 +76,10 @@ public class ThreadedIndexer extends Indexer
             numSolrjWorkers = num;
         }
         indexerExecutor = Executors.newFixedThreadPool(numThreadIndexers);
-        solrExecutor = Executors.newFixedThreadPool(numSolrjWorkers);
-        this.buffersize = buffersize;
+        ///solrExecutor = Executors.newFixedThreadPool(numSolrjWorkers);
+        solrExecutor = new ThreadPoolExecutor(numSolrjWorkers, numSolrjWorkers * 3, 10000L, TimeUnit.MILLISECONDS,
+                                              new ArrayBlockingQueue<Runnable>(numSolrjWorkers * 4));
+        this.chunksize = chunkSize;
     }
 
     private ThreadedIndexer(ThreadedIndexer toClone)
@@ -83,7 +88,7 @@ public class ThreadedIndexer extends Indexer
         readQ = toClone.readQ;
         docQ = toClone.docQ;
         cnts = toClone.cnts;
-        buffersize = toClone.buffersize;
+        chunksize = toClone.chunksize;
         numThreadIndexers = toClone.numThreadIndexers;
         numSolrjWorkers = toClone.numSolrjWorkers;
     }
@@ -137,6 +142,7 @@ public class ThreadedIndexer extends Indexer
         resetCnts();
         readerThread = new MarcReaderThread(reader, this, readQ, cnts);
         readerThread.start();
+        super.theReaderThread = readerThread;
 
         workers = new IndexerWorker[numThreadIndexers];
         for (int i = 0; i < numThreadIndexers; i++)
@@ -157,11 +163,22 @@ public class ThreadedIndexer extends Indexer
             {
                 logger.warn("ThreadedIndexer at top of loop, shutting down");
             }
-            if (docQ.remainingCapacity() == 0 || indexerThreadsAreDone(workers) ||
-                (shuttingDown && docQ.size() > 0))
+            if (docQ.size() > chunksize || indexerThreadsAreDone(workers) ||
+                (shuttingDown && docQ.size() > 0)  || (readerThread.isPaused() && docQ.size() > 0))
             {
-                final ArrayList<RecordAndDoc> chunk = new ArrayList<RecordAndDoc>(docQ.size());
-                if (docQ.drainTo(chunk) > 0)
+                int curProgress = cnts[2].get();
+                if (trackOverallProgress > 0 && curProgress > lastProgress + trackOverallProgress)
+                {
+                    lastProgress = curProgress;
+                    logger.info("ThreadedIndexer current progress: "+ curProgress + " records");
+                }
+                int curChunkSize = Math.min(chunksize, docQ.size());
+                final ArrayList<RecordAndDoc> chunk = new ArrayList<RecordAndDoc>(curChunkSize);
+                if (shuttingDown)
+                {
+                    logger.warn("ThreadedIndexer flushing "+ curChunkSize + " docs from docQ, which contains "+docQ.size() + " documents");
+                }
+                if (docQ.drainTo(chunk, curChunkSize) > 0)
                 {
                     RecordAndDoc firstDoc = chunk.get(0);
                     String threadName = null;
@@ -177,7 +194,28 @@ public class ThreadedIndexer extends Indexer
                     final BlockingQueue<RecordAndDoc> errQVal = (this.isSet(eErrorHandleVal.RETURN_ERROR_RECORDS)) ? this.errQ : null;
                     Runnable runnableChunk = new ChunkIndexerWorker(threadName, chunk, errQVal, this);
                     logger.debug("Starting IndexerThread: "+ threadName);
-                    solrExecutor.execute(runnableChunk);
+                    logger.debug("   approx number in solrj executor service: "+ solrExecutor.getQueue().size());
+                    while (runnableChunk != null) 
+                    {
+                        try {
+                            solrExecutor.execute(runnableChunk);
+                            runnableChunk = null;
+                        }
+                        catch (RejectedExecutionException  rje)
+                        {
+                            try
+                            {
+                                logger.debug("Solrj thread pool full, blocking");
+                                solrExecutor.getQueue().put(runnableChunk);
+                                logger.debug("Solrj thread pool no longer full, un-blocking");
+                                runnableChunk = null;
+                            }
+                            catch (InterruptedException e)
+                            {
+                                logger.debug("Solrj thread pool interrupted, re-trying");
+                            }
+                        }
+                    }
                 }
             }
             else if (shuttingDown && docQ.size() == 0)
@@ -244,6 +282,11 @@ public class ThreadedIndexer extends Indexer
         intCnts[1] = cnts[1].get();
         intCnts[2] = cnts[2].get();
         return(intCnts);
+    }
+
+    public ExecutorService getSolrExecutor()
+    {
+        return solrExecutor;
     }
 
     private boolean indexerThreadsAreDone(IndexerWorker[] workers)

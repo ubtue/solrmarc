@@ -84,6 +84,8 @@ public class SolrMarcDebug extends BootableMain
     static int[] fontSizeArray = { 8, 10, 12, 14, 18, 22, 28, 36, 42 };
     /**
      * Launch the application.
+     *
+     * @param args command line arguments
      */
     public static void main(final String[] args)
     {
@@ -107,6 +109,8 @@ public class SolrMarcDebug extends BootableMain
 
     /**
      * Create the application.
+     *
+     * @param args command line arguments
      */
     public SolrMarcDebug(String args[])
     {
@@ -707,7 +711,7 @@ public class SolrMarcDebug extends BootableMain
                 }
             }
         }
-        List<IndexerSpecException> perRecordExceptions = indexerFactory.getPerRecordErrors();
+        Collection<IndexerSpecException> perRecordExceptions = indexerFactory.getPerRecordErrors();
         try
         {
             doc.insertString(doc.getLength(), getTextForMarcErrorsAndExceptions(rec, perRecordExceptions), attributesErr);
@@ -747,7 +751,7 @@ public class SolrMarcDebug extends BootableMain
         }
     }
     
-    private String getTextForMarcErrorsAndExceptions(Record rec, List<IndexerSpecException> exceptions)
+    private String getTextForMarcErrorsAndExceptions(Record rec, Collection<IndexerSpecException> exceptions)
     {
         StringBuilder text = new StringBuilder();
         if (rec.hasErrors())

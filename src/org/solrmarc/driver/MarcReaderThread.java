@@ -54,12 +54,12 @@ public class MarcReaderThread extends Thread
         if (discardedRecords.size() > 0)
         {
             String id = discardedRecords.iterator().next().getRecord().getControlNumber();
-            logger.warn("Reader Thread: discarding unprocessed records starting with record: "+ id);
+            logger.warn("Reader Thread: discarding " + discardedRecords.size() + " unprocessed records starting with record: "+ id);
         }
         else
         {
             String id = (recordAndCnt != null && recordAndCnt.getRecord() != null) ? recordAndCnt.getRecord().getControlNumber() : "<none>";
-            logger.warn("Reader Thread Interrupted: last record processed was: "+ id);
+            logger.warn("Reader Thread Interrupted, no records in queue: last record processed was: "+ id);
         }
         indexer.addToCnt(0, -discardedRecords.size());
     }
@@ -71,5 +71,14 @@ public class MarcReaderThread extends Thread
             flushReadQueue(null);
         }
         return doneReading;
+    }
+
+    public boolean isPaused()
+    {
+        if (reader != null && reader.getClass().getName().contains("SQS"))
+        {
+            return (readQ.size() == 0);
+        }
+        return(false);
     }
 }

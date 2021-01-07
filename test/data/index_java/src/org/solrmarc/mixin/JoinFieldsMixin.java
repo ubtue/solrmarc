@@ -6,9 +6,11 @@ import org.marc4j.marc.Record;
 import org.marc4j.marc.Subfield;
 import org.marc4j.marc.VariableField;
 import org.solrmarc.index.SolrIndexerMixin;
+import org.solrmarc.index.extractor.formatter.FieldFormatter;
 import org.solrmarc.index.indexer.AbstractValueIndexer;
 import org.solrmarc.index.indexer.MultiValueIndexer;
 import org.solrmarc.index.indexer.ValueIndexerFactory;
+import org.solrmarc.tools.DataUtil;
 
 public class JoinFieldsMixin extends SolrIndexerMixin {
 
@@ -48,6 +50,17 @@ public class JoinFieldsMixin extends SolrIndexerMixin {
 		return result;
     }
 
+    public Collection<String> mapViaFormatterValue(Collection<String> values, String cleanValParam)
+    {
+        EnumSet<FieldFormatter.eCleanVal> cleanValue = DataUtil.getCleanValForParam(cleanValParam);
+        Collection<String> result = (values instanceof Set<?>) ? new LinkedHashSet<String>() : new ArrayList<String>();
+        for (String value : values)
+        {
+            result.add(DataUtil.cleanByVal(value, cleanValue));
+        }
+        return(result);
+    }
+    
     public List<String> getComplexJoinedFields(final Record record, String firstFieldSpec, String secondFieldSpec, String separator) throws Exception 
     {
         List<String> result = new ArrayList<String>();
@@ -76,6 +89,33 @@ public class JoinFieldsMixin extends SolrIndexerMixin {
             result.add(resultStr);
         }
 
+        return(result);
+    }
+
+    public List<String> getComplexJoinedFields(final Record record, String firstFieldSpec, String secondFieldSpec, String thirdFieldSpec, String separator) throws Exception 
+    {
+        List<String> result = new ArrayList<String>();
+        AbstractValueIndexer<?> indexer1 = getOrCreateIndexerFullSpec(firstFieldSpec);
+        AbstractValueIndexer<?> indexer2 = getOrCreateIndexerFullSpec(secondFieldSpec);
+        AbstractValueIndexer<?> indexer3 = getOrCreateIndexerFullSpec(thirdFieldSpec);
+        
+        ArrayList<String> firstData = new ArrayList<String>();  
+        firstData.addAll(indexer1.getFieldData(record));
+        ArrayList<String> secondData = new ArrayList<String>();  
+        secondData.addAll(indexer2.getFieldData(record));
+        ArrayList<String> thirdData = new ArrayList<String>();  
+        thirdData.addAll(indexer3.getFieldData(record));
+        
+        int i;
+        int maxSize = firstData.size() > secondData.size() ? firstData.size() : secondData.size();
+        maxSize = maxSize > thirdData.size() ? maxSize : thirdData.size();
+        for (i = 0; i < maxSize; i++)
+        {
+            String resultStr = ((i < firstData.size())? firstData.get(i) : "") + separator + 
+                               ((i < secondData.size())? secondData.get(i): "") + separator + 
+                               ((i < thirdData.size())? thirdData.get(i): "");
+            result.add(resultStr);
+        }
         return(result);
     }
 

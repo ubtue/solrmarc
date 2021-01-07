@@ -16,15 +16,16 @@ import org.marc4j.marc.Record;
  *  This class implements sending batches of documents to Solr.  It implements retries to cope with
  *  the issue where one bad document in a batch will cause all subsequent solr input documents in
  *  the batch to be skipped.
- *  <br/>
+ *  <p>
  *  To accomplish this the class will divide the batch into several smaller segments, and re-try sending
  *  those smaller batches.   Eventually a sub-batch containing the problem record will be sent one-by-one
  *  to insure that all valid documents are correctly sent to Solr, while only the documents containing
  *  errors are skipped.
- *  <br/>
+ *  </p>
+ *  <p>
  *  If the parameter errQ is not null the records that cause an error will be appended to that list and
  *  can subsequently be logged or fixed and retried.
- *
+ *  </p>
  *
  * @author rh9ec
  *
@@ -78,9 +79,17 @@ public class ChunkIndexerWorker implements Runnable
     {
         Thread.currentThread().setName(threadName);
         int inChunk = docs.size();
+//        if (logger.isDebugEnabled())
+//        {
+//            int totalSize = 0;
+//            for (SolrInputDocument doc : docs)
+//            {
+//                doc.values().
+//            }
+//        }
         logger.debug("Adding chunk of "+inChunk+ " documents -- starting with id : "+firstDocId);
         try {
-            // If all goes well, this is all we need. Add the docs, count the docs, and if desired return the docs with errors
+            // If all goes well, this is all we need. Add the docs, count the docs, and, if desired, return the docs that contain errors
             int cnt = indexer.solrProxy.addDocs(docs);
             indexer.addToCnt(2, cnt);
             logger.debug("Added chunk of "+cnt+ " documents -- starting with id : "+firstDocId);
@@ -111,7 +120,8 @@ public class ChunkIndexerWorker implements Runnable
             }
             else if (inChunk > 20)
             {
-                logger.debug("Failed on chunk of "+inChunk+ " documents -- starting with id : "+firstDocId);
+                logger.warn("Failed on chunk of "+inChunk+ " documents -- starting with id : "+firstDocId);
+                logger.info("   exception reported is: ", e);
                 int newChunkSize = inChunk / 4;
                 Runnable subChunk[] = new Runnable[4];
 
@@ -138,7 +148,8 @@ public class ChunkIndexerWorker implements Runnable
             // less than 20 in the chunk resubmit records one-by-one
             else
             {
-                logger.debug("Failed on chunk of "+inChunk+ " documents -- starting with id : "+firstDocId);
+                logger.warn("Failed on chunk of "+inChunk+ " documents -- starting with id : "+firstDocId);
+                logger.warn("   exception reported is: ", e);
                 // error on bulk update, resubmit one-by-one
                 while (recDocI.hasNext())
                 {

@@ -2,9 +2,11 @@ package org.solrmarc.mixin;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Reader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -35,6 +37,9 @@ import org.solrmarc.index.mapping.AbstractMultiValueMapping;
 import org.solrmarc.tools.PropertyUtils;
 import org.solrmarc.tools.StringNaturalCompare;
 import org.solrmarc.tools.Utils;
+import org.solrmarc.tools.SolrMarcDataException;
+import org.solrmarc.tools.SolrMarcDataException.eDataErrorLevel;
+
 
 public class CustomLocationMixin extends SolrIndexerMixin
 {
@@ -139,7 +144,7 @@ public class CustomLocationMixin extends SolrIndexerMixin
 
     String bestSingleCallNumber = null;
     String bestSingleLCCallNumber = null;
-    List<?> trimmedHoldingsList = null;
+    List<VariableField> trimmedHoldingsList = null;
     String bestAuthor = null;
     String bestAuthorCutter = null;
     String pubYear = null;
@@ -208,9 +213,9 @@ public class CustomLocationMixin extends SolrIndexerMixin
         }
     }
 
-    private List<?> getTrimmedHoldingsList(Record record, String holdingsTag)
+    private List<VariableField> getTrimmedHoldingsList(Record record, String holdingsTag)
     {
-        List<?> result = record.getVariableFields(holdingsTag);
+        List<VariableField> result = record.getVariableFields(holdingsTag);
         addBoundWithHoldings(record, result);
         removeShadowed999sFromList(record, result);
         removeLostHoldings(result);
@@ -219,7 +224,7 @@ public class CustomLocationMixin extends SolrIndexerMixin
         return result;
     }
 
-    private void addBoundWithHoldings(Record record, List<?> fields999)
+    private void addBoundWithHoldings(Record record, List<VariableField> fields999)
     {
         if (record.getControlNumber() == null || record.getControlNumber().length() < 2) return;
         String boundWithStr = locationExtraData.boundWithIds.get(record.getControlNumber().substring(1));
@@ -245,24 +250,28 @@ public class CustomLocationMixin extends SolrIndexerMixin
         }
     }
 
-    private void removeShadowed999sFromList(Record record, List<?> fields999)
+    private void removeShadowed999sFromList(Record record, List<VariableField> fields999)
     {
         String extraString = null;
         if (locationExtraData.addnlShadowedIds != null)
         {
             extraString = locationExtraData.addnlShadowedIds.get(record.getControlNumber());
+//          if (extraString == null) return;
+//          else if (extraString.equals("")) return; // this will list locations
         }
-        if (extraString == null) return;
-        else if (extraString.equals("")) return; // this will list locations
-        else
+//        else
         {
-            Iterator<?> iter = fields999.iterator();
+            Iterator<VariableField> iter = fields999.iterator();
             while (iter.hasNext())
             {
-                Object field = iter.next();
+                VariableField field = iter.next();
                 DataField df = (DataField) field;
                 String barcode = df.getSubfield('i') != null ? df.getSubfield('i').getData() : "";
-                if (extraString != null && extraString.contains("|" + barcode + "|"))
+                if (df.getSubfield('3') != null) 
+                {
+                    iter.remove();
+                }
+                else if (extraString != null && extraString.contains("|" + barcode + "|"))
                 {
                     iter.remove();
                 }
@@ -270,55 +279,37 @@ public class CustomLocationMixin extends SolrIndexerMixin
         }
     }
 
-    private void removeLostHoldings(List<?> fields999)
+    private void removeLostHoldings(List<VariableField> fields999)
     {
-        // String mapName = loadTranslationMap(null, "shadowed_location_map.properties");
-        AbstractMultiValueMapping locationMap = ValueIndexerFactory.instance().createMultiValueMapping("shadowed_location_map.properties");
-        Iterator<?> iter = fields999.iterator();
+        AbstractMultiValueMapping shadowedMap = ValueIndexerFactory.instance().createMultiValueMapping("shadowed_location_map.properties");
+        Iterator<VariableField> iter = fields999.iterator();
         while (iter.hasNext())
         {
-            Object field = iter.next();
+            VariableField field = iter.next();
             DataField df = (DataField) field;
             Subfield currentLocation = df.getSubfield('k');
             Subfield homeLocation = df.getSubfield('l');
-            if (currentLocation != null)
-            {
-                try
-                {
-                    if (locationMap.mapSingle(currentLocation.getData()).equals("HIDDEN"))
-                    {
-                        iter.remove();
-                        continue;
-                    }
-                }
-                catch (Exception e)
-                {
-                }
-            }
-            if (homeLocation != null)
-            {
-                try
-                {
-                    if (locationMap.mapSingle(homeLocation.getData()).equals("HIDDEN"))
-                    {
-                        iter.remove();
-                    }
-                }
-                catch (Exception e)
-                {
-                }
-            }
+            Subfield shadowed = df.getSubfield('3');
 
+            try {  
+                if ((currentLocation != null && shadowedMap.mapSingle(currentLocation.getData()).equals("HIDDEN")) ||
+                    (homeLocation != null && shadowedMap.mapSingle(homeLocation.getData()).equals("HIDDEN")) ||
+                    (shadowed != null && shadowed.getData().length() > 0))
+                {
+                    iter.remove();
+                }
+            }
+            catch (Exception e) {}
         }
     }
 
     // this method added in response to JIRA ISSUE LIBSRVSRCHDISCOV-377
-    private void removeOrderRecords(List<?> fields999)
+    private void removeOrderRecords(List<VariableField> fields999)
     {
-        Iterator<?> iter = fields999.iterator();
+        Iterator<VariableField> iter = fields999.iterator();
         while (iter.hasNext())
         {
-            Object field = iter.next();
+            VariableField field = iter.next();
             DataField df = (DataField) field;
             Subfield callNumber = df.getSubfield('a');
             if (callNumber != null && callNumber.getData().matches(".*[Oo][Rr][Dd][Ee][Rr][- ]*0.*"))
@@ -398,7 +389,7 @@ public class CustomLocationMixin extends SolrIndexerMixin
      * @param record
      *            - The MARC record that is being indexed.
      */
-    private Set<String> getCallNumberFieldSetNo050(final Record record, List<?> fields999)
+    private Set<String> getCallNumberFieldSetNo050(final Record record, List<VariableField> fields999)
     {
         boolean processExtraShadowedIds = true; // fieldSpec.contains("';'");
 
@@ -414,7 +405,7 @@ public class CustomLocationMixin extends SolrIndexerMixin
             // loadExtraShadowedIds(extraIdsFilename, boundWithsFilename);
             String extraString = locationExtraData.addnlShadowedIds.get(record.getControlNumber());
 
-            for (Object field : fields999)
+            for (VariableField field : fields999)
             {
                 DataField df = ((DataField) (field));
                 String barCode = (df.getSubfield('i') != null) ? df.getSubfield('i').getData() : "";
@@ -486,15 +477,6 @@ public class CustomLocationMixin extends SolrIndexerMixin
         if (fList1.size() == 0)
         {
             fList1 = get050Entries(record);
-//            SolrIndexer.instance().getFieldListAsList(record, "050a");
-//            List<String> fList2 = SolrIndexer.instance().getFieldListAsList(record, "050b");
-//            if (fList2.size() > 0)
-//            {
-//                String arr1[] = fList1.toArray(new String[0]);
-//                String arr2[] = fList2.toArray(new String[0]);
-//                arr1[0] = arr1[0] + arr2[0];
-//                fList1 = Arrays.asList(arr1);
-//            }
         }
         for (String field : fList1)
         {
@@ -652,7 +634,7 @@ public class CustomLocationMixin extends SolrIndexerMixin
             if (result == null) return (result);
             if (result.startsWith("{"))
             {
-                String shelfKey = CallNumUtils.getLCShelfkey(valParts[1], record.getControlNumber());
+                String shelfKey = getLCShelfkey(valParts[1], record.getControlNumber());
                 String keyDigits = shelfKey.substring(4, 8);
                 String ranges[] = result.replaceAll("[{]", "").split("[}]");
                 for (String range : ranges)
@@ -691,13 +673,27 @@ public class CustomLocationMixin extends SolrIndexerMixin
         if (result == null) return (result);
         String resultParts[] = result.split(":", 2);
         if (sortableFlag && (resultParts[0].equals("LC") || (resultParts[0].equals("") && CallNumUtils.isValidLC(resultParts[1])))) 
-            result = CallNumUtils.getLCShelfkey(resultParts[1], record.getControlNumber());
+        {
+            result = getLCShelfkey(resultParts[1], record.getControlNumber());
+        }
         else if (resultParts[1].startsWith("M@")) 
             result = result.replaceAll("M@", "MSS ");
         return (result);
 
     }
 
+    public String getLCShelfkey(String lcCallNum, String controlNum)
+    {
+        try {
+            String result = CallNumUtils.getLCShelfkey(lcCallNum, controlNum);
+            return(result);
+        }
+        catch (IllegalArgumentException iae)
+        {
+            throw new SolrMarcDataException(eDataErrorLevel.INFO, iae.getMessage());
+        }        
+    }
+    
     public String getShelfKey(final Record record)
     {
         String callnum = bestSingleCallNumber;
@@ -706,7 +702,7 @@ public class CustomLocationMixin extends SolrIndexerMixin
         String resultParts[] = callnum.split(":", 2);
         if ((resultParts[0].equals("LC") || resultParts[0].equals("")) && CallNumUtils.isValidLC(resultParts[1]))
         {
-            result = CallNumUtils.getLCShelfkey(resultParts[1], record.getControlNumber());
+            result = getLCShelfkey(resultParts[1], record.getControlNumber());
         }
         return (result);
     }
@@ -727,7 +723,7 @@ public class CustomLocationMixin extends SolrIndexerMixin
         String resultParts[] = callnum.split(":", 2);
         if ((resultParts[0].equals("LC") || resultParts[0].equals("")) && CallNumUtils.isValidLC(resultParts[1]))
         {
-            result = CallNumUtils.getLCShelfkey(resultParts[1], record.getControlNumber());
+            result = getLCShelfkey(resultParts[1], record.getControlNumber());
         }
         return (result);
     }
@@ -1009,22 +1005,26 @@ public class CustomLocationMixin extends SolrIndexerMixin
     public Set<String> getCustomLibrary(final Record record, String visibilityMap, String libraryMap) throws Exception
     {
         Set<String> resultSet = new LinkedHashSet<String>();
-        List<?> fields999 = trimmedHoldingsList;
+        List<VariableField> fields999 = trimmedHoldingsList;
         AbstractMultiValueMapping visMap = ValueIndexerFactory.instance().createMultiValueMapping(visibilityMap);
         AbstractMultiValueMapping libMap = ValueIndexerFactory.instance().createMultiValueMapping(libraryMap);
 
-        for (DataField field : (List<DataField>) fields999)
+        for (VariableField vfield :  fields999)
         {
+            
+            DataField field = (DataField)vfield;
             Subfield curLocF = field.getSubfield('k');
             Subfield homeLocF = field.getSubfield('l');
             Subfield libF = field.getSubfield('m');
+            Subfield shadowF = field.getSubfield('3');
             String lib = (libF != null ? libF.getData() : null);
             String mappedLib = libMap.mapSingle(lib);
             if (mappedLib == null || resultSet.contains(mappedLib)) continue;
             String curLoc = (curLocF != null ? curLocF.getData() : null);
             String homeLoc = (homeLocF != null ? homeLocF.getData() : null);
             String mappedHomeVis = visMap.mapSingle(homeLoc);
-            if (mappedHomeVis.equals("HIDDEN"))
+            boolean shadow = (shadowF != null ? shadowF.getData().length() > 0 : false);
+            if (shadow || mappedHomeVis.equals("HIDDEN"))
             {
                 continue;
             }
@@ -1041,21 +1041,24 @@ public class CustomLocationMixin extends SolrIndexerMixin
     public Set<String> getCustomLocation(final Record record, String locationMap, String visibilityMap, String libraryMap) throws Exception
     {
         Set<String> resultSet = new LinkedHashSet<String>();
-        List<?> fields999 = trimmedHoldingsList;
+        List<VariableField> fields999 = trimmedHoldingsList;
         AbstractMultiValueMapping locMap = ValueIndexerFactory.instance().createMultiValueMapping(locationMap);
         AbstractMultiValueMapping visMap = ValueIndexerFactory.instance().createMultiValueMapping(visibilityMap);
         AbstractMultiValueMapping libMap = ValueIndexerFactory.instance().createMultiValueMapping(libraryMap);
-        for (DataField field : (List<DataField>) fields999)
+        for (VariableField vfield : fields999)
         {
+            DataField field = (DataField)vfield;
             Subfield curLocF = field.getSubfield('k');
             Subfield homeLocF = field.getSubfield('l');
             Subfield libF = field.getSubfield('m');
+            Subfield shadowF = field.getSubfield('3');
             String curLoc = (curLocF != null ? curLocF.getData() : null);
             String homeLoc = (homeLocF != null ? homeLocF.getData() : null);
             String lib = (libF != null ? libF.getData() : null);
+            boolean shadow = (shadowF != null ? shadowF.getData().length() > 0 : false);
             String mappedHomeVis = visMap.mapSingle(homeLoc);
             String mappedHomeLoc = locMap.mapSingle(homeLoc);
-            if (mappedHomeVis.equals("VISIBLE") && mappedHomeLoc == null)
+            if ((!shadow && mappedHomeVis.equals("VISIBLE")) && mappedHomeLoc == null)
             {
                 String combinedLocMapped = locMap.mapSingle(homeLoc + "__" + lib);
                 if (combinedLocMapped != null) mappedHomeLoc = combinedLocMapped;
@@ -1065,7 +1068,7 @@ public class CustomLocationMixin extends SolrIndexerMixin
             {
                 String mappedCurLoc = locMap.mapSingle(curLoc);
                 String mappedCurVis = visMap.mapSingle(curLoc);
-                if (mappedCurVis.equals("HIDDEN")) continue; // this copy of the item is Hidden, go no further
+                if (shadow || mappedCurVis.equals("HIDDEN")) continue; // this copy of the item is Hidden, go no further
                 if (mappedCurLoc != null)
                 {
                     if (mappedCurLoc.contains("$m") && mappedLib != null)
@@ -1080,7 +1083,7 @@ public class CustomLocationMixin extends SolrIndexerMixin
                     continue; // Used
                 }
             }
-            if (mappedHomeVis.equals("HIDDEN")) continue; // this copy of the item is Hidden, go no further
+            if (shadow || mappedHomeVis.equals("HIDDEN")) continue; // this copy of the item is Hidden, go no further
             if (mappedHomeLoc != null && mappedHomeLoc.contains("$"))
             {
                 if (mappedLib != null) mappedHomeLoc = mappedHomeLoc.replaceAll("[$]m", mappedLib);
@@ -1092,6 +1095,151 @@ public class CustomLocationMixin extends SolrIndexerMixin
         return (resultSet);
     }
 
+    public Set<String> getCustomAvailabilityForLocation(final Record record, String locationAvailabilityMap, String visibilityMap, String libraryMap) throws Exception
+    {
+        Set<String> resultSet = new LinkedHashSet<String>();
+        List<VariableField> fields999 = trimmedHoldingsList;
+        AbstractMultiValueMapping locMap = ValueIndexerFactory.instance().createMultiValueMapping(locationAvailabilityMap);
+        AbstractMultiValueMapping visMap = ValueIndexerFactory.instance().createMultiValueMapping(visibilityMap);
+        AbstractMultiValueMapping libMap = ValueIndexerFactory.instance().createMultiValueMapping(libraryMap);
+        for (VariableField vfield : fields999)
+        {
+            DataField field = (DataField)vfield;
+            Subfield curLocF = field.getSubfield('k');
+            Subfield homeLocF = field.getSubfield('l');
+            Subfield libF = field.getSubfield('m');
+            Subfield shadowF = field.getSubfield('3');
+            String curLoc = (curLocF != null ? curLocF.getData() : null);
+            String homeLoc = (homeLocF != null ? homeLocF.getData() : null);
+            String lib = (libF != null ? libF.getData() : null);
+            boolean shadow = (shadowF != null ? shadowF.getData().length() > 0 : false);
+            if (!shadow)
+            {
+                addCustomAvailabilityForLocation(resultSet, curLoc, homeLoc, lib, locMap, visMap, libMap);
+            }
+        }
+        return (resultSet);
+    }
+    /*
+     C:/Users/rh9ec/Development/Projects/solrmarc-3.0/test/data/records/locations_unique.txt  C:/Users/rh9ec/Development/Projects/solrmarc-3.0/test/data/translation_maps/location_availability_map.properties   C:/Users/rh9ec/Development/Projects/solrmarc-3.0/test/data/translation_maps/shadowed_location_map.properties  C:/Users/rh9ec/Development/Projects/solrmarc-3.0/test/data/translation_maps/library_map.properties
+     */
+    
+    public static void main(String[] args)
+    {
+        try
+        {
+            testCustomAvailabilityForLocation(args[0], args[1], args[2], args[3], args[4]);
+        }
+        catch (Exception e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+    }
+    
+    public static void testCustomAvailabilityForLocation(String filename, String homeDir, String locationMap, String visibilityMap, String libraryMap) throws Exception
+    {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(filename)));
+        String homeDirs[] = new String[1];
+        homeDirs[0] = homeDir;
+        ValueIndexerFactory.initialize(homeDirs);
+        AbstractMultiValueMapping locMap = ValueIndexerFactory.instance().createMultiValueMapping(locationMap);
+        AbstractMultiValueMapping visMap = ValueIndexerFactory.instance().createMultiValueMapping(visibilityMap);
+        AbstractMultiValueMapping libMap = ValueIndexerFactory.instance().createMultiValueMapping(libraryMap);
+        String line;
+        while ((line = reader.readLine()) != null)
+        {
+            Set<String> resultSet = new LinkedHashSet<String>();
+
+            String lineParts[] = line.split("[|]");
+            String sampleID = lineParts[0];
+            String curLoc = lineParts[1];
+            String homeLoc = lineParts[2];
+            String lib = lineParts[3];
+            addCustomAvailabilityForLocation(resultSet, curLoc, homeLoc, lib, locMap, visMap, libMap);
+            StringBuilder sb = new StringBuilder();
+            for (String member : resultSet)
+            {
+                sb.append(" : ");
+                sb.append(member);
+            }
+            if (sb.length() == 0) sb.append(" : HIDDEN");
+            System.out.println(line + sb.toString());
+        }
+        reader.close();
+    }
+    
+    public static void addCustomAvailabilityForLocation(Set<String> resultSet, String curLoc, String homeLoc, String lib, 
+            AbstractMultiValueMapping availMap, AbstractMultiValueMapping visMap, AbstractMultiValueMapping libMap) throws Exception
+    {    
+        String mappedHomeVis = visMap.mapSingle(homeLoc);
+        String mappedHomeAvail = availMap.mapSingle(homeLoc);
+        if (homeLoc.equals("INTERNET") || (curLoc != null && curLoc.equals("INTERNET")))
+        {
+            resultSet.add("Online");
+            return;
+        }
+        if (mappedHomeVis.equals("VISIBLE") )
+        {
+            String combinedLocMapped = availMap.mapSingle(homeLoc + "__" + lib);
+            if (combinedLocMapped != null) mappedHomeAvail = combinedLocMapped;
+            combinedLocMapped = availMap.mapSingle("Library" + "__" + lib);
+            if (combinedLocMapped != null) mappedHomeAvail = combinedLocMapped;
+        }
+        String mappedLib = libMap.mapSingle(lib);
+        if (curLoc != null)
+        {
+            String mappedCurAvail = availMap.mapSingle(curLoc);
+            String mappedCurVis = visMap.mapSingle(curLoc);
+            if (mappedCurVis.equals("VISIBLE") )
+            {
+                String combinedLocMapped = availMap.mapSingle(curLoc + "__" + lib);
+                if (combinedLocMapped != null) mappedCurAvail = combinedLocMapped;
+                combinedLocMapped = availMap.mapSingle("Library" + "__" + lib);
+                if (combinedLocMapped != null) mappedCurAvail = combinedLocMapped;
+            }
+            if (mappedCurVis.equals("HIDDEN")) return; // this copy of the item is Hidden, go no further
+            if (mappedCurAvail != null)
+            {
+                if (mappedCurAvail.contains("$m") && mappedLib != null)
+                {
+                    resultSet.add(mappedCurAvail.replaceAll("[$]m", mappedLib));
+                    resultSet.add(mappedCurAvail.replaceAll("[$]m", "").trim());
+                }
+                else if (mappedCurAvail.contains("$m") && mappedLib == null)
+                {
+                    resultSet.add(mappedCurAvail.replaceAll("[$]m", "").trim());
+                }
+                else 
+                {
+                    resultSet.add(mappedCurAvail);
+                }
+                return; // Used
+            }
+            else  // if current location returns null, that item/copy is not available.  so stop processing 
+            {
+                return;
+            }
+        }
+        if (mappedHomeVis.equals("HIDDEN")) return; // this copy of the item is Hidden, go no further
+        if (mappedHomeAvail != null)
+        {
+            if (mappedHomeAvail.contains("$m") && mappedLib != null) 
+            {
+                resultSet.add(mappedHomeAvail.replaceAll("[$]m", mappedLib));
+                resultSet.add(mappedHomeAvail.replaceAll("[$]m", "").trim());
+            }
+            else if (mappedHomeAvail.contains("$m") && mappedLib == null)
+            {
+                resultSet.add(mappedHomeAvail.replaceAll("[$]m", "").trim());
+            }
+            else
+            {
+                resultSet.add(mappedHomeAvail);
+            }
+        }
+    }
+
     public String getShadowedLocation(final Record record, String propertiesMap, String returnHidden, String processExtra) throws Exception
     {
         if (record.getControlNumber() == null || record.getControlNumber().length() < 2) return (null);
@@ -1099,67 +1247,50 @@ public class CustomLocationMixin extends SolrIndexerMixin
         boolean returnHiddenRecs = returnHidden.startsWith("return");
         AbstractMultiValueMapping map = ValueIndexerFactory.instance().createMultiValueMapping(propertiesMap);
         // String mapName = loadTranslationMap(null, propertiesMap);
-
-        Set<String> fields = SolrIndexer.instance().getFieldList(record, "999aikl,join(\"%%%\")");
         boolean visible = false;
-        String extraString = null;
-        if (processExtraShadowedIds && locationExtraData.boundWithIds != null && locationExtraData.boundWithIds.containsKey(record.getControlNumber().substring(1)))
+        List<VariableField> vfields = record.getVariableFields("999");
+        for (VariableField vfield : (List<VariableField>) vfields)
         {
-            String boundWithHolding = locationExtraData.boundWithIds.get(record.getControlNumber().substring(1));
-            String fparts[] = boundWithHolding.split("\\|");
-            String mappedFpartCurrent = map.mapSingle(fparts[2]);
-            String mappedFpartHome = map.mapSingle(fparts[3]);
-            if (mappedFpartCurrent.equals("VISIBLE") && mappedFpartHome.equals("VISIBLE"))
+            DataField field = (DataField)vfield;
+            Subfield callnumF = field.getSubfield('a');
+            Subfield curLocF = field.getSubfield('k');
+            Subfield homeLocF = field.getSubfield('l');
+            Subfield libF = field.getSubfield('m');
+            Subfield shadowF = field.getSubfield('3');
+            String callnum = (callnumF != null ? callnumF.getData() : null);
+            String curLoc = (curLocF != null ? curLocF.getData() : null);
+            String homeLoc = (homeLocF != null ? homeLocF.getData() : null);
+            String lib = (libF != null ? libF.getData() : null);
+            boolean shadow = (shadowF != null ? shadowF.getData().length() > 0 : false);
+            // this test (and the change above to return aikl instead of ikl) added in response to JIRA ISSUE LIBSRVSRCHDISCOV-377
+            if (callnum.matches(".*[Oo][Rr][Dd][Ee][Rr][- ]*0.*"))
             {
-                visible = true;
+                continue;
             }
-        }
-        else
-        {
-            if (processExtraShadowedIds && locationExtraData.addnlShadowedIds.containsKey(record.getControlNumber()))
+            else if (shadow == true || ( curLoc == null && homeLoc == null))
             {
-                extraString = locationExtraData.addnlShadowedIds.get(record.getControlNumber());
+                continue;
             }
-            if ("".equals(extraString)) visible = false;
-            else
+            else if (curLoc == null)
             {
-                for (String field : fields)
+                String mappedHomeLoc = map.mapSingle(homeLoc);
+                if (mappedHomeLoc.equals("VISIBLE")) visible = true;
+            }
+            else if (curLoc != null && curLoc.equals("RSRVSHADOW"))
+            {
+                String mappedHomeLoc = map.mapSingle(homeLoc);
+                if (mappedHomeLoc.equals("VISIBLE"))
                 {
-                    String fparts[] = field.split("%%%");
-                    // this test (and the change above to return aikl instead of ikl) added in response to JIRA ISSUE LIBSRVSRCHDISCOV-377
-                    if (fparts[0].matches(".*[Oo][Rr][Dd][Ee][Rr][- ]*0.*"))
-                    {
-                        continue;
-                    }
-                    else if (extraString != null && extraString.contains("|" + fparts[1] + "|"))
-                    {
-                        // this holding is marked as Hidden via the addnlShadowedIds data file
-                        // so simply continue, and unless another non-Hidden holding is found the
-                        // record will be not visible.
-                        continue;
-                    }
-                    else if (fparts.length == 3)
-                    {
-                        String mappedFpart = map.mapSingle(fparts[2]);
-                        if (mappedFpart.equals("VISIBLE")) visible = true;
-                    }
-                    else if (fparts.length == 4 || fparts[3].equals("RSRVSHADOW"))
-                    {
-                        String mappedFpart1 = map.mapSingle(fparts[2]);
-                        if (mappedFpart1.equals("VISIBLE"))
-                        {
-                            visible = true;
-                        }
-                    }
-                    else if (fparts.length == 4)
-                    {
-                        String mappedFpart1 = map.mapSingle(fparts[2]);
-                        String mappedFpart2 = map.mapSingle(fparts[3]);
-                        if (mappedFpart1.equals("VISIBLE") && mappedFpart2.equals("VISIBLE"))
-                        {
-                            visible = true;
-                        }
-                    }
+                    visible = true;
+                }
+            }
+            else if (curLoc != null && homeLoc != null)
+            {
+                String mappedHomeLoc = map.mapSingle(homeLoc);
+                String mappedCurLoc = map.mapSingle(curLoc);
+                if (mappedHomeLoc.equals("VISIBLE") && mappedCurLoc.equals("VISIBLE"))
+                {
+                    visible = true;
                 }
             }
         }

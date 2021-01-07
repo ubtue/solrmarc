@@ -9,20 +9,41 @@ import org.solrmarc.index.mapping.AbstractMultiValueMapping;
 
 public interface FieldFormatter extends ExternalMethod
 {
-
     public final static EnumSet<eCleanVal> TITLE_SORT_UPPER = EnumSet.of(eCleanVal.CLEAN_EACH, eCleanVal.STRIP_ACCCENTS,
-            eCleanVal.STRIP_ALL_PUNCT, eCleanVal.TO_UPPER, eCleanVal.STRIP_INDICATOR_2);
+            eCleanVal.STRIP_ALL_PUNCT, eCleanVal.TO_UPPER, eCleanVal.STRIP_INDICATOR);
     public final static EnumSet<eCleanVal> TITLE_SORT_LOWER = EnumSet.of(eCleanVal.CLEAN_EACH, eCleanVal.STRIP_ACCCENTS,
-            eCleanVal.STRIP_ALL_PUNCT, eCleanVal.TO_LOWER, eCleanVal.STRIP_INDICATOR_2);
+            eCleanVal.STRIP_ALL_PUNCT, eCleanVal.TO_LOWER, eCleanVal.STRIP_INDICATOR);
 
     public enum eJoinVal
     {
-        SEPARATE, JOIN;
+        SEPARATE("separate"), JOIN("join");
+        
+        private String value;
+        public String toString() 
+        {
+           return value;
+        }
+        private eJoinVal(String value) 
+        {
+            this.value = value;
+        } 
     };
 
     public enum eCleanVal
     {
-        CLEAN_END, CLEAN_EACH, STRIP_ALL_PUNCT, STRIP_ACCCENTS, TO_UPPER, TO_LOWER, STRIP_INDICATOR_2, UNTRIMMED, TO_TITLECASE;
+        CLEAN_END("cleanEnd"), CLEAN_EACH("cleanEach"), STRIP_ALL_PUNCT("stripPunct"), STRIP_ACCCENTS("stripAccent"), 
+        TO_UPPER("toUpper"), TO_LOWER("toLower"), TO_TITLECASE("toTitleCase"), UNTRIMMED("untrimmed"),
+        STRIP_INDICATOR_1("stripInd1"), STRIP_INDICATOR_2("stripInd"), STRIP_INDICATOR("stripInd");
+        
+        private String value;
+        public String toString() 
+        {
+           return value;
+        }
+        private eCleanVal(String value) 
+        {
+            this.value = value;
+        } 
     };
 
     public abstract String getFieldTagFmt();
@@ -75,7 +96,7 @@ public interface FieldFormatter extends ExternalMethod
 
     public abstract Collection<String> handleMapping(Collection<String> cleaned) throws Exception;
 
-    public abstract String handleSubFieldFormat(String sfCode, String mappedDataVal);
+    public abstract String handleSubFieldFormat(String sfCode, VariableField vf, String mappedDataVal);
 
     public abstract boolean hasFieldFormat();
 

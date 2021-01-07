@@ -1,2 +1,7 @@
 language: java
+addons:
+  apt:
+    packages:
+      ant
+      ant-optional
 script: ant -Dversion="travis_CI" test
