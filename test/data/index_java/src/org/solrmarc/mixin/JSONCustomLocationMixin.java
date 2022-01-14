@@ -20,6 +20,7 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.log4j.Logger;
 import org.marc4j.MarcException;
 import org.marc4j.marc.DataField;
 import org.marc4j.marc.MarcFactory;
@@ -50,6 +51,9 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
     Map<String, String> locationShadowedMap = null;
     Map<String, String> libraryAvailabilityMap = null;  /*  On Shelf or Request */
     Map<String, String> locationAvailabilityMap = null;  /*  Online  or  On Shelf  or Request */
+    Map<String, String> libraryCirculatingMap = null;  /*  true or false */
+    Map<String, String> locationCirculatingMap = null;  /*  true or false */
+    private final static Logger logger = Logger.getLogger(JSONCustomLocationMixin.class);
 
     boolean isInited()
     {
@@ -1039,6 +1043,53 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
         return (resultSet);
     }
 
+    public String getCustomCirculating(final Record record) throws Exception
+    {
+        String result = "false";
+        boolean circulating = false;
+        List<VariableField> fields999 = trimmedHoldingsList;
+//        AbstractMultiValueMapping locMap = ValueIndexerFactory.instance().createMultiValueMapping(locationMap);
+//        AbstractMultiValueMapping visMap = ValueIndexerFactory.instance().createMultiValueMapping(visibilityMap);
+//        AbstractMultiValueMapping libMap = ValueIndexerFactory.instance().createMultiValueMapping(libraryMap);
+        for (VariableField vfield : fields999)
+        {
+            DataField field = (DataField)vfield;
+            Subfield curLocF = field.getSubfield('k');
+            Subfield homeLocF = field.getSubfield('l');
+            Subfield libF = field.getSubfield('m');
+            Subfield shadowF = field.getSubfield('3');
+            String curLoc = (curLocF != null ? curLocF.getData() : null);
+            String homeLoc = (homeLocF != null ? homeLocF.getData() : null);
+            String lib = (libF != null ? libF.getData() : null);
+            boolean shadow = (shadowF != null ? shadowF.getData().length() > 0 : false);
+            String libCirculating = libraryCirculatingMap.get(lib);
+            if (curLoc != null)
+            {
+                String curLocCirculating = locationCirculatingMap.get(curLoc);
+                String mappedCurVis = locationShadowedMap.get(curLoc);
+                if (shadow || mappedCurVis.equals("HIDDEN")) continue; // this copy of the item is Hidden, go no further
+                if (curLocCirculating != null)
+                {
+                    if (libCirculating.equals("true") && curLocCirculating.equals("true"))
+                        circulating = true;
+                    continue; 
+                }
+            }
+            String mappedHomeVis = locationShadowedMap.get(homeLoc);
+            if (mappedHomeVis.equals("HIDDEN")) continue; // this copy of the item is Hidden, go no further
+//            if (mappedHomeLoc != null && mappedHomeLoc.contains("$"))
+//            {
+//                if (mappedLib != null) mappedHomeLoc = mappedHomeLoc.replaceAll("[$]m", mappedLib);
+//                else mappedHomeLoc = mappedHomeLoc.replaceAll("[$]m", "Library");
+//
+//            }
+            String homeLocCirculating = locationCirculatingMap.get(homeLoc);
+            if (libCirculating.equals("true") && homeLocCirculating.equals("true"))
+                circulating = true;   
+        }
+        return (circulating ? "true" : "false");
+    }
+
     public Set<String> getCustomAvailabilityForLocation(final Record record) throws Exception
     {
         Set<String> resultSet = new LinkedHashSet<String>();
@@ -1169,6 +1220,10 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
             String homeLoc = (homeLocF != null ? homeLocF.getData() : null);
 //            String lib = (libF != null ? libF.getData() : null);
             boolean shadow = (shadowF != null ? shadowF.getData().length() > 0 : false);
+            if (shadow && homeLoc != null && homeLoc.equals("INTERNET"))
+            {
+            	shadow = false;
+            }
             // this test (and the change above to return aikl instead of ikl) added in response to JIRA ISSUE LIBSRVSRCHDISCOV-377
             if (callnum.matches(".*[Oo][Rr][Dd][Ee][Rr][- ]*0.*"))
             {
@@ -1718,6 +1773,10 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
         }
         if (JSONLookupURL == null)
         {
+        	JSONLookupURL = System.getenv("SOLRMARC_SIRSI_LOCATION_URL");
+        }
+        if (JSONLookupURL == null)
+        {
             JSONLookupURL = "https://ils-connector-ws-dev.internal.lib.virginia.edu/v4/availability/list";
         }
         URL url;
@@ -1726,6 +1785,7 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
         try
         {
             url = new URL(JSONLookupURL);
+            logger.info("Establishing Connection to URL: "+ JSONLookupURL );
             connection = (HttpURLConnection)url.openConnection();
             reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
             JsonParser parser = new JsonParser(JsonParser.OPT_INTERN_KEYWORDS |
@@ -1733,7 +1793,7 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
                     JsonParser.OPT_SINGLE_QUOTE_STRINGS);
             parser.setInput("availability/list", reader, false);
             parseAllInput(parser);
-            
+            logger.info("Data successfully read from URL: "+ JSONLookupURL );          
         }
         catch (MalformedURLException e)
         {
@@ -1742,8 +1802,7 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
         }
         catch (IOException e)
         {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
+            logger.error("Error connecting or reading from : "+ JSONLookupURL , e);
         }
         finally {
             if (reader != null)  try { reader.close(); } catch (IOException ioe) {}
@@ -1784,6 +1843,7 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
                         inArray = LIBRARIES_ARRAY;
                         libraryNameMap = new LinkedHashMap<String, String>();
                         libraryAvailabilityMap = new LinkedHashMap<String, String>();
+                        libraryCirculatingMap =  new LinkedHashMap<String, String>();
                     } 
                     else if (mname.equals("locations")) 
                     {
@@ -1791,6 +1851,7 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
                         locationNameMap = new LinkedHashMap<String, String>();
                         locationShadowedMap = new LinkedHashMap<String, String>();
                         locationAvailabilityMap = new LinkedHashMap<String, String>();
+                        locationCirculatingMap = new LinkedHashMap<String, String>();
                     }
                     
                     break;
@@ -1811,8 +1872,6 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
                     {
                         value = JsonParser.stripQuotes(value);
                     }
-
-                    value = value.replaceAll("⁄", "/");
 
                     if (mname.equals("key")) 
                     {
@@ -1852,6 +1911,17 @@ public class JSONCustomLocationMixin extends SolrIndexerMixin
                         else if (inArray == LOCATIONS_ARRAY)
                         {
                             locationNameMap.put(curKey,  value);
+                        }
+                    } 
+                    else if (mname.equals("circulating")) 
+                    {
+                        if (inArray == LIBRARIES_ARRAY) 
+                        {
+                            libraryCirculatingMap.put(curKey,   (Boolean.parseBoolean(value) ? "true" : "false"));
+                        }
+                        else if (inArray == LOCATIONS_ARRAY)
+                        {
+                            locationCirculatingMap.put(curKey,   (Boolean.parseBoolean(value) ? "true" : "false"));
                         }
                     } 
 
