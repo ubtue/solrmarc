@@ -157,7 +157,7 @@ public class Indexer
         try {
             if (recDoc.getDoc() != null)
             {
-                solrProxy.addDoc(recDoc.getDoc());
+                solrProxy.addDoc(recDoc);
                 incrementCnt(2);
                 if (recDoc.getErrLvl() != eErrorSeverity.NONE && isSet(eErrorHandleVal.RETURN_ERROR_RECORDS))
                 {
@@ -199,7 +199,7 @@ public class Indexer
         return(cnts);
     }
 
-    RecordAndCnt getRecord(MarcReader reader)
+    public RecordAndCnt getRecord(MarcReader reader)
     {
         Record record = null;
         while (record == null)
@@ -221,12 +221,25 @@ public class Indexer
                     record = null;
                 }
             }
+            catch (Exception e)
+            {
+                logger.error("Unknown Error in MARC record data", e);
+                if (Boolean.parseBoolean(System.getProperty("solrmarc.terminate.on.marc.exception", "true")))
+                {
+                    return(null);
+                }
+                else
+                {
+                    logger.warn("Trying to continue after MARC record data error");
+                    record = null;
+                }
+            }
         }
         int cnt = incrementCnt(0);
         return (new RecordAndCnt(record, cnt));
     }
 
-    RecordAndDoc getIndexDoc(Record record, int count)
+    public RecordAndDoc getIndexDoc(Record record, int count)
     {
         RecordAndDoc recDoc = null;
         recDoc = indexToSolrDoc(record);
