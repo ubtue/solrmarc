@@ -13,6 +13,7 @@ public class MethodCallManager
     private static MethodCallManager theManager = new MethodCallManager();
 
     private final Map<Object, String> perRecordInitMap = new ConcurrentHashMap<>();
+    private final Map<Object, String> perRecordCleanupMap = new ConcurrentHashMap<>();
     private final Map<String, AbstractExtractorMethodCall<?>> extractorMethodCalls = new HashMap<>();
     private final Map<String, AbstractMappingMethodCall<?>> mappingMethodCalls = new HashMap<>();
 
@@ -33,15 +34,24 @@ public class MethodCallManager
         String recId = record.getControlNumber();
         synchronized (perRecordInitMap)
         {
-             Iterator<String> deleteIterator = perRecordInitMap.values().iterator();
-             while (deleteIterator.hasNext())
-             {
-                 String value = deleteIterator.next();
-                 if (value.equals(recId)) deleteIterator.remove();
-             }
+            Iterator<String> deleteIterator = perRecordInitMap.values().iterator();
+            while (deleteIterator.hasNext())
+            {
+                String value = deleteIterator.next();
+                if (value.equals(recId)) deleteIterator.remove();
+            }
+        }
+        synchronized (perRecordCleanupMap)
+        {
+            Iterator<String> deleteIterator = perRecordCleanupMap.values().iterator();
+            while (deleteIterator.hasNext())
+            {
+                String value = deleteIterator.next();
+                if (value.equals(recId)) deleteIterator.remove();
+            }
         }
     }
-    
+
     private boolean isPerRecordInitMethod(Method method)
     {
         final Class<?>[] parameterTypes = method.getParameterTypes();
@@ -52,7 +62,17 @@ public class MethodCallManager
         return(true);
     }
 
-    
+    private boolean isPerRecordCleanupMethod(Method method)
+    {
+        final Class<?>[] parameterTypes = method.getParameterTypes();
+        if (parameterTypes.length != 1 || !parameterTypes[0].equals(Record.class)
+                || !void.class.isAssignableFrom(method.getReturnType())
+                || !Modifier.isPublic(method.getModifiers()))
+            return(false);
+        return(true);
+    }
+
+
     private boolean isValidExtractorMethod(Method method)
     {
         final Class<?>[] parameterTypes = method.getParameterTypes();
@@ -76,9 +96,9 @@ public class MethodCallManager
     private boolean isValidMappingMethod(Method method)
     {
         final Class<?>[] parameterTypes = method.getParameterTypes();
-        if (!(parameterTypes.length > 0 && Modifier.isPublic(method.getModifiers())&& 
+        if (!(parameterTypes.length > 0 && Modifier.isPublic(method.getModifiers())&&
                 ((Collection.class.isAssignableFrom(parameterTypes[0])                // its first parameter is a collction
-                    && Collection.class.isAssignableFrom(method.getReturnType())) ||  // and it returns a collection 
+                    && Collection.class.isAssignableFrom(method.getReturnType())) ||  // and it returns a collection
                 (parameterTypes[0].equals(String.class)                               // OR its first parameter is a String
                     && method.getReturnType().equals(String.class))                   // and it returns a String
                 )))
@@ -112,16 +132,25 @@ public class MethodCallManager
     {
         classes.add(clazz);
         Method hasPerRecordInit = null;
+        Method hasPerRecordCleanup = null;
         for (final Method method : clazz.getDeclaredMethods())
         {
-            if (isPerRecordInitMethod(method))
+            if (method.getName().equals("perRecordInit") && isPerRecordInitMethod(method))
             {
                 hasPerRecordInit = method;
                 if (!perRecordInitMap.containsKey(method))
                 {
                     perRecordInitMap.put(method, "");
                 }
-            }          
+            }
+            if (method.getName().equals("perRecordCleanup") && isPerRecordCleanupMethod(method))
+            {
+                hasPerRecordCleanup = method;
+                if (!perRecordCleanupMap.containsKey(method))
+                {
+                    perRecordCleanupMap.put(method, "");
+                }
+            }
         }
         for (final Method method : clazz.getDeclaredMethods())
         {
@@ -131,21 +160,21 @@ public class MethodCallManager
                 AbstractExtractorMethodCall<?> methodCall = null;
                 if (Collection.class.isAssignableFrom(method.getReturnType()))
                 {
-                    methodCall = createMultiValueExtractorMethodCall(mixin, method, hasPerRecordInit, parameterTypes.length);
+                    methodCall = createMultiValueExtractorMethodCall(mixin, method, hasPerRecordInit, hasPerRecordCleanup, parameterTypes.length);
                 }
                 else if (String.class.isAssignableFrom(method.getReturnType()))
                 {
-                    methodCall = createSingleValueExtractorMethodCall(mixin, method, hasPerRecordInit, parameterTypes.length);
+                    methodCall = createSingleValueExtractorMethodCall(mixin, method, hasPerRecordInit, hasPerRecordCleanup, parameterTypes.length);
                 }
                 if (addMethodsAsDefault)
                 {
-                    // If there is already a custom method with the same name as this one replace 
+                    // If there is already a custom method with the same name as this one replace
                     // the default method definition with a placeholder.
                     if (extractorMethodCalls.containsKey(toCacheKey(method, parameterTypes)))
                     {
                         extractorMethodCalls.put(toCacheKey(method, parameterTypes), null);
                     }
-                    else 
+                    else
                     {
                         extractorMethodCalls.put(toCacheKey(method, parameterTypes), methodCall);
                     }
@@ -183,14 +212,14 @@ public class MethodCallManager
         return new SingleValueMappingMethodCall(object, method);
     }
 
-    protected SingleValueExtractorMethodCall createSingleValueExtractorMethodCall(Object object, Method method, Method perRecordInit, int numParameters)
+    protected SingleValueExtractorMethodCall createSingleValueExtractorMethodCall(Object object, Method method, Method perRecordInit, Method perRecordCleanup, int numParameters)
     {
-        return new SingleValueExtractorMethodCall(object, method, perRecordInit, numParameters);
+        return new SingleValueExtractorMethodCall(object, method, perRecordInit, perRecordCleanup, numParameters);
     }
 
-    protected MultiValueExtractorMethodCall createMultiValueExtractorMethodCall(Object object, Method method, Method perRecordInit, int numParameters)
+    protected MultiValueExtractorMethodCall createMultiValueExtractorMethodCall(Object object, Method method, Method perRecordInit, Method perRecordCleanup, int numParameters)
     {
-        return new MultiValueExtractorMethodCall(object, method, perRecordInit, numParameters);
+        return new MultiValueExtractorMethodCall(object, method, perRecordInit, perRecordCleanup, numParameters);
     }
 
     /**
@@ -247,7 +276,7 @@ public class MethodCallManager
         // get all Extractor Mixins and return them in a printable string
         return loadedExtractorMixinsToString(getLoadedExtractorMixinsMatches(null, null, -1));
     }
-    
+
     public List<AbstractExtractorMethodCall<?>> getLoadedExtractorMixinsMatches(String classNameToMatch, String methodNameToMatch, int numParameters)
     {
         List<AbstractExtractorMethodCall<?>> result = new ArrayList<>();
@@ -274,7 +303,7 @@ public class MethodCallManager
         }
         return(result);
     }
-    
+
     public String loadedExtractorMixinsToString(List<AbstractExtractorMethodCall<?>> matches)
     {
         List<String> lines = new ArrayList<>(matches.size());
@@ -347,8 +376,8 @@ public class MethodCallManager
 //        final String result = perRecordInitMap.get(perRecordInit);
 //        return(result);
 //    }
-    
-    public final boolean alreadyCalledFor(Object objectWithPerRecordInit, Object record)
+
+    public final boolean alreadyCalledForInit(Object objectWithPerRecordInit, Object record)
     {
         String recId = "";
         if (record instanceof Record)
@@ -369,7 +398,28 @@ public class MethodCallManager
         return(returnValue);
     }
 
-    
+    public final boolean alreadyCalledForCleanup(Object objectWithPerRecordCleanup, Object record)
+    {
+        String recId = "";
+        if (record instanceof Record)
+        {
+            Record rec = (Record)record;
+            recId = rec.getControlNumber();
+        }
+        boolean returnValue = true;
+        synchronized (perRecordCleanupMap)
+        {
+            final String result = perRecordCleanupMap.get(objectWithPerRecordCleanup);
+            if (result == null || !result.equals(recId))
+            {
+                perRecordCleanupMap.put(objectWithPerRecordCleanup, recId);
+                returnValue = false;
+            }
+        }
+        return(returnValue);
+    }
+
+
 //    public final void setRecordLastCalledFor(Method perRecordInit, String recordID)
 //    {
 //        perRecordInitMap.put(perRecordInit, recordID);

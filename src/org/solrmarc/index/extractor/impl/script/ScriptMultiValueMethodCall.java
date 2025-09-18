@@ -15,7 +15,7 @@ public class ScriptMultiValueMethodCall extends AbstractExtractorMethodCall<Coll
     public ScriptMultiValueMethodCall(final Interpreter interpreter, final BshMethod method,
             final String scriptFileName, int numParameters)
     {
-        super(scriptFileName, method.getName(), false, numParameters);
+        super(scriptFileName, method.getName(), false, false, numParameters);
         this.interpreter = interpreter;
         this.method = method;
 
@@ -29,12 +29,12 @@ public class ScriptMultiValueMethodCall extends AbstractExtractorMethodCall<Coll
                     + scriptFileName + "\nMethod: " + method.toString());
         }
     }
- 
+
     private ScriptMultiValueMethodCall(ScriptMultiValueMethodCall toClone)
     {
-        super(toClone.getObjectName(), toClone.method.getName(), false, toClone.getNumParameters());
+        super(toClone.getObjectName(), toClone.method.getName(), false, false, toClone.getNumParameters());
         this.interpreter = toClone.interpreter;
-        this.method = toClone.method;        
+        this.method = toClone.method;
     }
 
     @SuppressWarnings("unchecked")
@@ -46,9 +46,9 @@ public class ScriptMultiValueMethodCall extends AbstractExtractorMethodCall<Coll
         {
             result = method.invoke(parameters, interpreter);
         }
-        if (result instanceof Collection)  
+        if (result instanceof Collection)
             return((Collection<String>)result);
-        else 
+        else
             return(null);
     }
 
@@ -62,6 +62,19 @@ public class ScriptMultiValueMethodCall extends AbstractExtractorMethodCall<Coll
     protected boolean perRecordInitCalled(Object[] record)
     {
         // TODO Implement perRecordInit support in scripts.
+        return false;
+    }
+
+    @Override
+    public void invokePerRecordCleanup(Object[] record) throws Exception
+    {
+        // TODO Implement perRecordCleanup support in scripts.
+    }
+
+    @Override
+    protected boolean perRecordCleanupCalled(Object[] record)
+    {
+        // TODO Implement perRecordCleanup support in scripts.
         return false;
     }
 

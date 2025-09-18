@@ -9,12 +9,14 @@ public abstract class AbstractExtractorMethodCall<T> implements ExternalMethod
     private final String methodName;
     private final int numParameters;
     private final boolean hasPerRecordInit;
+    private final boolean hasPerRecordCleanup;
 
-    protected AbstractExtractorMethodCall(final String objectName, final String methodName, final boolean hasPerRecordInit, int numParameters)
+    protected AbstractExtractorMethodCall(final String objectName, final String methodName, final boolean hasPerRecordInit, final boolean hasPerRecordCleanup, int numParameters)
     {
         this.objectName = objectName;
         this.methodName = methodName;
         this.hasPerRecordInit = hasPerRecordInit;
+        this.hasPerRecordCleanup = hasPerRecordCleanup;
         this.numParameters = numParameters;
     }
 
@@ -36,7 +38,12 @@ public abstract class AbstractExtractorMethodCall<T> implements ExternalMethod
         {
             invokePerRecordInit(new Object[]{record});
         }
-        return invoke(parameters);
+        T result = invoke(parameters);
+        if (hasPerRecordCleanup && !perRecordCleanupCalled(new Object[]{record}))
+        {
+            invokePerRecordCleanup(new Object[]{record});
+        }
+        return result;
     }
 
     protected abstract boolean perRecordInitCalled(Object[] record);
@@ -44,6 +51,10 @@ public abstract class AbstractExtractorMethodCall<T> implements ExternalMethod
     protected abstract void invokePerRecordInit(Object[] record) throws Exception;
 
     public abstract T invoke(final Object[] parameters) throws Exception;
+
+    protected abstract boolean perRecordCleanupCalled(Object[] record);
+
+    protected abstract void invokePerRecordCleanup(Object[] record) throws Exception;
 
     public String getObjectName()
     {

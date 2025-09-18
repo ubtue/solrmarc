@@ -9,14 +9,16 @@ public class MultiValueExtractorMethodCall extends AbstractExtractorMethodCall<C
     private final Object mixin;
     private final Method method;
     private final Method perRecordInit;
+    private final Method perRecordCleanup;
     //private final Method isThreadSafe;
 
-    public MultiValueExtractorMethodCall(final Object mixin, final Method method, final Method perRecordInit, int numParameters)
+    public MultiValueExtractorMethodCall(final Object mixin, final Method method, final Method perRecordInit, final Method perRecordCleanup, int numParameters)
     {
-        super(mixin.getClass().getName(), method.getName(), perRecordInit != null, numParameters);
+        super(mixin.getClass().getName(), method.getName(), perRecordInit != null, perRecordCleanup != null, numParameters);
         this.mixin = mixin;
         this.method = method;
         this.perRecordInit = perRecordInit;
+        this.perRecordCleanup = perRecordCleanup;
 
         if (!Collection.class.isAssignableFrom(this.method.getReturnType()))
         {
@@ -28,16 +30,17 @@ public class MultiValueExtractorMethodCall extends AbstractExtractorMethodCall<C
 
     private MultiValueExtractorMethodCall(MultiValueExtractorMethodCall toClone)
     {
-        super(toClone.mixin.getClass().getName(), toClone.method.getName(), toClone.perRecordInit != null, toClone.getNumParameters());
+        super(toClone.mixin.getClass().getName(), toClone.method.getName(), toClone.perRecordInit != null, toClone.perRecordCleanup != null, toClone.getNumParameters());
         this.mixin = AbstractMethodCallFactory.createThreadLocalObjectForSpecifiedClass(toClone.mixin.getClass());
         this.method = toClone.method;
         this.perRecordInit = toClone.perRecordInit;
+        this.perRecordCleanup = toClone.perRecordCleanup;
     }
 
-    @Override 
+    @Override
     protected boolean perRecordInitCalled(Object[] record)
     {
-        return (MethodCallManager.instance().alreadyCalledFor(this.mixin, record[0]));
+        return (MethodCallManager.instance().alreadyCalledForInit(this.mixin, record[0]));
     }
 
     @Override
@@ -51,6 +54,18 @@ public class MultiValueExtractorMethodCall extends AbstractExtractorMethodCall<C
     public Collection<String> invoke(final Object[] parameters) throws Exception
     {
         return (Collection<String>) method.invoke(mixin, parameters);
+    }
+
+    @Override
+    protected boolean perRecordCleanupCalled(Object[] record)
+    {
+        return (MethodCallManager.instance().alreadyCalledForCleanup(this.mixin, record[0]));
+    }
+
+    @Override
+    public void invokePerRecordCleanup(Object[] record) throws Exception
+    {
+        perRecordCleanup.invoke(mixin, record);
     }
 
     @Override

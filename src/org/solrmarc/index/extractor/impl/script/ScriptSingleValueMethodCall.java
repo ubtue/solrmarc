@@ -12,7 +12,7 @@ public class ScriptSingleValueMethodCall extends AbstractExtractorMethodCall<Str
 
     public ScriptSingleValueMethodCall(final Interpreter interpreter, final BshMethod method, final String scriptFileName, int numParameters)
     {
-        super(scriptFileName, method.getName(), false, numParameters);
+        super(scriptFileName, method.getName(), false, false, numParameters);
         this.interpreter = interpreter;
         this.method = method;
 
@@ -29,9 +29,9 @@ public class ScriptSingleValueMethodCall extends AbstractExtractorMethodCall<Str
 
     private ScriptSingleValueMethodCall(ScriptSingleValueMethodCall toClone)
     {
-        super(toClone.getObjectName(), toClone.method.getName(), false, toClone.getNumParameters());
+        super(toClone.getObjectName(), toClone.method.getName(), false, false, toClone.getNumParameters());
         this.interpreter = toClone.interpreter;
-        this.method = toClone.method;        
+        this.method = toClone.method;
     }
 
     @Override
@@ -42,9 +42,9 @@ public class ScriptSingleValueMethodCall extends AbstractExtractorMethodCall<Str
         {
             result = method.invoke(parameters, interpreter);
         }
-        if (result instanceof String)  
+        if (result instanceof String)
             return((String)result);
-        else 
+        else
             return(null);
     }
 
@@ -58,6 +58,19 @@ public class ScriptSingleValueMethodCall extends AbstractExtractorMethodCall<Str
     protected boolean perRecordInitCalled(Object[] record)
     {
         // TODO Implement perRecordInit support in scripts.
+        return false;
+    }
+
+    @Override
+    public void invokePerRecordCleanup(Object[] record) throws Exception
+    {
+        // TODO Implement perRecordCleanup support in scripts.
+    }
+
+    @Override
+    protected boolean perRecordCleanupCalled(Object[] record)
+    {
+        // TODO Implement perRecordCleanup support in scripts.
         return false;
     }
 

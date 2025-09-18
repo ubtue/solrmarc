@@ -8,11 +8,11 @@ import org.solrmarc.index.indexer.ValueIndexerFactory;
 
 /**
  * class SolrIndexerMixin
- * 
+ *
  * This class exists solely for backwards compatibility purposes.  The intention is that if a previous custom mixin class
- * was being used, it will be able to compile by referencing this class.  
- * 
- * 
+ * was being used, it will be able to compile by referencing this class.
+ *
+ *
  * @author rh9ec
  *
  */
@@ -28,6 +28,10 @@ public class SolrIndexerMixin implements Mixin
     }
 
     public void perRecordInit(Record record) throws Exception
+    {
+    }
+
+    public void perRecordCleanup(Record record) throws Exception
     {
     }
 }
